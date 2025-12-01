@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1e1b4b">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="ChatRoom">
+    <meta name="description" content="Private messaging with friends using passcode-protected rooms">
+    
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="data:application/json,{
+        &quot;name&quot;: &quot;ChatRoom - Private Messaging&quot;,
+        &quot;short_name&quot;: &quot;ChatRoom&quot;,
+        &quot;description&quot;: &quot;Private messaging with friends&quot;,
+        &quot;start_url&quot;: &quot;.&quot;,
+        &quot;display&quot;: &quot;standalone&quot;,
+        &quot;background_color&quot;: &quot;%231e1b4b&quot;,
+        &quot;theme_color&quot;: &quot;%231e1b4b&quot;,
+        &quot;orientation&quot;: &quot;portrait&quot;,
+        &quot;icons&quot;: [{
+            &quot;src&quot;: &quot;data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%23a855f7' width='100' height='100' rx='20'/><path fill='white' d='M50 20c-16.57 0-30 11.94-30 26.67 0 8.33 4.29 15.83 11 20.83l-2.75 11.17 12.25-6.5c3 .89 6.21 1.33 9.5 1.33 16.57 0 30-11.94 30-26.67S66.57 20 50 20z'/></svg>&quot;,
+            &quot;sizes&quot;: &quot;512x512&quot;,
+            &quot;type&quot;: &quot;image/svg+xml&quot;,
+            &quot;purpose&quot;: &quot;any maskable&quot;
+        }]
+    }">
+    
+    <title>ChatRoom - Private Messaging</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { 
+            font-family: 'Inter', sans-serif; 
+            -webkit-tap-highlight-color: transparent;
+            box-sizing: border-box;
+        }
+        html, body {
+            overscroll-behavior: none;
+            overflow: hidden;
+            height: 100%;
+            width: 100%;
+            position: fixed;
+        }
+        .messages-container::-webkit-scrollbar { width: 4px; }
+        .messages-container::-webkit-scrollbar-track { background: transparent; }
+        .messages-container::-webkit-scrollbar-thumb { background: #475569; border-radius: 2px; }
+        .message-bubble { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .typing-indicator span {
+            animation: bounce 1.4s infinite ease-in-out;
+        }
+        .typing-indicator span:nth-child(1) { animation-delay: 0s; }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: translateY(0); }
+            40% { transform: translateY(-6px); }
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .animate-pulse-slow { animation: pulse 2s infinite; }
+        .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
+        .safe-top { padding-top: env(safe-area-inset-top, 0px); }
+        
+        /* Install button animation */
+        @keyframes glow {
+            0%, 100% { box-shadow: 0 0 5px rgba(168, 85, 247, 0.5); }
+            50% { box-shadow: 0 0 20px rgba(168, 85, 247, 0.8); }
+        }
+        .install-glow { animation: glow 2s infinite; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 h-full overflow-hidden">
+    
+    <!-- Install Prompt Banner -->
+    <div id="installBanner" class="hidden fixed top-0 left-0 right-0 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-3 z-50 safe-top">
+        <div class="flex items-center justify-between max-w-lg mx-auto">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                </div>
+                <div>
+                    <p class="font-semibold text-sm">Install ChatRoom</p>
+                    <p class="text-xs opacity-80">Add to home screen</p>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="installApp()" class="px-4 py-2 bg-white text-purple-600 font-semibold rounded-lg text-sm hover:bg-opacity-90 transition">
+                    Install
+                </button>
+                <button onclick="dismissInstall()" class="p-2 hover:bg-white/20 rounded-lg transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Landing Screen -->
+    <div id="landingScreen" class="h-full overflow-y-auto">
+        <div class="min-h-full flex items-center justify-center p-4 py-8">
+            <div class="bg-slate-800/80 backdrop-blur-xl rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl border border-slate-700">
+                <div class="text-center mb-6">
+                    <div class="w-20 h-20 bg-gradient-to-r from-purple-500 to-pink-500 rounded-2xl mx-auto mb-4 flex items-center justify-center shadow-lg shadow-purple-500/30">
+                        <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"></path>
+                        </svg>
+                    </div>
+                    <h1 class="text-3xl font-bold text-white mb-2">ChatRoom</h1>
+                    <p class="text-slate-400">Private messaging with friends</p>
+                </div>
+
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-2">Your Nickname</label>
+                        <input type="text" id="nicknameInput" placeholder="Enter your name" autocomplete="off"
+                            class="w-full px-4 py-3 bg-slate-700/50 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition text-base">
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-700">
+                        <h3 class="text-white font-semibold mb-4 flex items-center gap-2">
+                            <div class="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path>
+                                </svg>
+                            </div>
+                            Create New Room
+                        </h3>
+                        <div class="space-y-3">
+                            <input type="text" id="newRoomName" placeholder="Room name" autocomplete="off"
+                                class="w-full px-4 py-3 bg-slate-700/50 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition text-base">
+                            <input type="password" id="newRoomPasscode" placeholder="Set passcode (min 4 chars)" autocomplete="new-password"
+                                class="w-full px-4 py-3 bg-slate-700/50 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent transition text-base">
+                            <button onclick="createRoom()" 
+                                class="w-full py-3.5 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-semibold rounded-xl hover:from-green-600 hover:to-emerald-700 transition transform active:scale-[0.98] shadow-lg shadow-green-500/25">
+                                Create Room
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="pt-4 border-t border-slate-700">
+                        <h3 class="text-white font-semibold mb-4 flex items-center gap-2">
+                            <div class="w-8 h-8 bg-purple-500/20 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"></path>
+                                </svg>
+                            </div>
+                            Join Existing Room
+                        </h3>
+                        <div class="space-y-3">
+                            <input type="text" id="joinRoomId" placeholder="Room ID" autocomplete="off"
+                                class="w-full px-4 py-3 bg-slate-700/50 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition text-base uppercase">
+                            <input type="password" id="joinRoomPasscode" placeholder="Room passcode" autocomplete="current-password"
+                                class="w-full px-4 py-3 bg-slate-700/50 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition text-base">
+                            <button onclick="joinRoom()" 
+                                class="w-full py-3.5 bg-gradient-to-r from-purple-500 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-600 hover:to-pink-700 transition transform active:scale-[0.98] shadow-lg shadow-purple-500/25">
+                                Join Room
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Install App Button -->
+                    <div id="installSection" class="hidden pt-4 border-t border-slate-700">
+                        <button onclick="installApp()" 
+                            class="w-full py-3.5 bg-slate-700 hover:bg-slate-600 text-white font-semibold rounded-xl transition flex items-center justify-center gap-2 install-glow">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                            Install App
+                        </button>
+                    </div>
+                </div>
+
+                <p class="text-center text-slate-500 text-xs mt-6">
+                    🔒 End-to-end private rooms with passcode protection
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chat Screen -->
+    <div id="chatScreen" class="h-full flex flex-col hidden">
+        <!-- Header -->
+        <div class="bg-slate-800/95 backdrop-blur-xl border-b border-slate-700 px-4 py-3 safe-top">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <button onclick="leaveRoom()" class="p-2 -ml-2 hover:bg-slate-700 rounded-lg transition active:scale-95">
+                        <svg class="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path>
+                        </svg>
+                    </button>
+                    <div>
+                        <h2 id="roomTitle" class="text-white font-semibold">Room Name</h2>
+                        <p id="roomIdDisplay" class="text-xs text-slate-400">Room ID: xxxxxx</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <div id="onlineCount" class="flex items-center gap-1.5 bg-green-500/20 text-green-400 px-3 py-1.5 rounded-full text-sm">
+                        <span class="w-2 h-2 bg-green-400 rounded-full animate-pulse-slow"></span>
+                        <span>0</span>
+                    </div>
+                    <button onclick="copyRoomId()" class="p-2 hover:bg-slate-700 rounded-lg transition active:scale-95" title="Copy Room ID">
+                        <svg class="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages -->
+        <div id="messagesContainer" class="flex-1 overflow-y-auto messages-container">
+            <div id="messagesList" class="p-4 space-y-3">
+                <!-- Messages will be inserted here -->
+            </div>
+        </div>
+
+        <!-- Typing Indicator -->
+        <div id="typingIndicator" class="hidden px-4 pb-2">
+            <div class="flex items-center gap-2 text-slate-400 text-sm">
+                <div class="typing-indicator flex gap-1">
+                    <span class="w-2 h-2 bg-purple-400 rounded-full"></span>
+                    <span class="w-2 h-2 bg-purple-400 rounded-full"></span>
+                    <span class="w-2 h-2 bg-purple-400 rounded-full"></span>
+                </div>
+                <span id="typingText">Someone is typing...</span>
+            </div>
+        </div>
+
+        <!-- Message Input -->
+        <div class="bg-slate-800/95 backdrop-blur-xl border-t border-slate-700 p-3 safe-bottom">
+            <div class="flex gap-2">
+                <input type="text" id="messageInput" placeholder="Type a message..." 
+                    onkeypress="handleKeyPress(event)"
+                    oninput="handleTyping()"
+                    autocomplete="off"
+                    class="flex-1 px-4 py-3 bg-slate-700/50 border border-slate-600 rounded-xl text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition text-base">
+                <button onclick="sendMessage()" 
+                    class="px-4 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white font-semibold rounded-xl hover:from-purple-600 hover:to-pink-700 transition transform active:scale-95 shadow-lg shadow-purple-500/25">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed top-4 left-4 right-4 mx-auto max-w-sm bg-slate-800 text-white px-5 py-3 rounded-xl shadow-2xl transform -translate-y-20 opacity-0 transition-all duration-300 z-50 border border-slate-700">
+        <div class="flex items-center gap-3">
+            <span id="toastIcon">✓</span>
+            <span id="toastMessage" class="flex-1"></span>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration (Built-in)
+        const firebaseConfig = {
+            apiKey: "AIzaSyBXKMDFjUYFjvhHhD1-jJHMKaNSUVJGe5c",
+            authDomain: "picshare-866e3.firebaseapp.com",
+            databaseURL: "https://picshare-866e3-default-rtdb.firebaseio.com",
+            projectId: "picshare-866e3",
+            storageBucket: "picshare-866e3.firebasestorage.app",
+            messagingSenderId: "360237752242",
+            appId: "1:360237752242:web:2143497629817cc4cd0eab",
+            measurementId: "G-60SCPVYL2D"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        // PWA Install Prompt
+        let deferredPrompt;
+        
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('installBanner').classList.remove('hidden');
+            document.getElementById('installSection').classList.remove('hidden');
+        });
+
+        window.addEventListener('appinstalled', () => {
+            deferredPrompt = null;
+            document.getElementById('installBanner').classList.add('hidden');
+            document.getElementById('installSection').classList.add('hidden');
+            showToast('App installed successfully!', false);
+        });
+
+        function installApp() {
+            if (deferredPrompt) {
+                deferredPrompt.prompt();
+                deferredPrompt.userChoice.then((choiceResult) => {
+                    if (choiceResult.outcome === 'accepted') {
+                        console.log('User accepted install');
+                    }
+                    deferredPrompt = null;
+                });
+            }
+            document.getElementById('installBanner').classList.add('hidden');
+        }
+
+        function dismissInstall() {
+            document.getElementById('installBanner').classList.add('hidden');
+        }
+
+        // App State
+        let currentUser = {
+            id: 'user_' + Math.random().toString(36).substr(2, 9),
+            nickname: ''
+        };
+        let currentRoom = null;
+        let typingTimeout = null;
+        let messagesRef = null;
+        let presenceRef = null;
+        let typingRef = null;
+
+        // Generate Room ID
+        function generateRoomId() {
+            return Math.random().toString(36).substr(2, 6).toUpperCase();
+        }
+
+        // Hash passcode
+        function hashPasscode(passcode) {
+            let hash = 0;
+            for (let i = 0; i < passcode.length; i++) {
+                const char = passcode.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash = hash & hash;
+            }
+            return hash.toString();
+        }
+
+        // Show Toast
+        function showToast(message, isError = false) {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toastMessage');
+            const toastIcon = document.getElementById('toastIcon');
+            
+            toastMessage.textContent = message;
+            toastIcon.textContent = isError ? '✕' : '✓';
+            toast.className = `fixed top-4 left-4 right-4 mx-auto max-w-sm ${isError ? 'bg-red-600' : 'bg-green-600'} text-white px-5 py-3 rounded-xl shadow-2xl transform transition-all duration-300 z-50 translate-y-0 opacity-100`;
+            
+            setTimeout(() => {
+                toast.className = `fixed top-4 left-4 right-4 mx-auto max-w-sm bg-slate-800 text-white px-5 py-3 rounded-xl shadow-2xl transform transition-all duration-300 z-50 -translate-y-20 opacity-0 border border-slate-700`;
+            }, 3000);
+        }
+
+        // Create Room
+        function createRoom() {
+            const nickname = document.getElementById('nicknameInput').value.trim();
+            const roomName = document.getElementById('newRoomName').value.trim();
+            const passcode = document.getElementById('newRoomPasscode').value.trim();
+
+            if (!nickname) {
+                showToast('Please enter your nickname', true);
+                return;
+            }
+            if (!roomName) {
+                showToast('Please enter a room name', true);
+                return;
+            }
+            if (passcode.length < 4) {
+                showToast('Passcode must be at least 4 characters', true);
+                return;
+            }
+
+            currentUser.nickname = nickname;
+            const roomId = generateRoomId();
+
+            const roomData = {
+                name: roomName,
+                passcodeHash: hashPasscode(passcode),
+                createdAt: Date.now(),
+                createdBy: currentUser.nickname
+            };
+
+            database.ref('chatrooms/' + roomId).set(roomData).then(() => {
+                showToast('Room created! ID: ' + roomId);
+                enterRoom(roomId, roomName);
+            }).catch(error => {
+                showToast('Error creating room', true);
+            });
+        }
+
+        // Join Room
+        function joinRoom() {
+            const nickname = document.getElementById('nicknameInput').value.trim();
+            const roomId = document.getElementById('joinRoomId').value.trim().toUpperCase();
+            const passcode = document.getElementById('joinRoomPasscode').value.trim();
+
+            if (!nickname) {
+                showToast('Please enter your nickname', true);
+                return;
+            }
+            if (!roomId) {
+                showToast('Please enter a room ID', true);
+                return;
+            }
+            if (!passcode) {
+                showToast('Please enter the passcode', true);
+                return;
+            }
+
+            currentUser.nickname = nickname;
+
+            database.ref('chatrooms/' + roomId).once('value').then(snapshot => {
+                if (!snapshot.exists()) {
+                    showToast('Room not found', true);
+                    return;
+                }
+
+                const room = snapshot.val();
+                if (room.passcodeHash !== hashPasscode(passcode)) {
+                    showToast('Incorrect passcode', true);
+                    return;
+                }
+
+                showToast('Joined room!');
+                enterRoom(roomId, room.name);
+            }).catch(error => {
+                showToast('Error joining room', true);
+            });
+        }
+
+        // Enter Room
+        function enterRoom(roomId, roomName) {
+            currentRoom = roomId;
+            document.getElementById('landingScreen').classList.add('hidden');
+            document.getElementById('chatScreen').classList.remove('hidden');
+            document.getElementById('roomTitle').textContent = roomName;
+            document.getElementById('roomIdDisplay').textContent = 'ID: ' + roomId;
+
+            // Setup message listener
+            messagesRef = database.ref('chatmessages/' + roomId);
+            messagesRef.orderByChild('timestamp').limitToLast(100).on('child_added', snapshot => {
+                displayMessage(snapshot.val());
+            });
+
+            // Setup presence
+            presenceRef = database.ref('chatpresence/' + roomId + '/' + currentUser.id);
+            presenceRef.set({
+                nickname: currentUser.nickname,
+                online: true,
+                lastSeen: Date.now()
+            });
+            presenceRef.onDisconnect().remove();
+
+            // Listen for presence changes
+            database.ref('chatpresence/' + roomId).on('value', snapshot => {
+                const users = snapshot.val();
+                const count = users ? Object.keys(users).length : 0;
+                document.getElementById('onlineCount').querySelector('span:last-child').textContent = count;
+            });
+
+            // Setup typing indicator
+            typingRef = database.ref('chattyping/' + roomId);
+            typingRef.on('value', snapshot => {
+                const typing = snapshot.val();
+                if (typing) {
+                    const typingUsers = Object.entries(typing)
+                        .filter(([id, data]) => id !== currentUser.id && Date.now() - data.timestamp < 3000)
+                        .map(([id, data]) => data.nickname);
+                    
+                    if (typingUsers.length > 0) {
+                        document.getElementById('typingIndicator').classList.remove('hidden');
+                        document.getElementById('typingText').textContent = 
+                            typingUsers.length === 1 
+                                ? typingUsers[0] + ' is typing...'
+                                : typingUsers.slice(0, 2).join(', ') + ' are typing...';
+                    } else {
+                        document.getElementById('typingIndicator').classList.add('hidden');
+                    }
+                } else {
+                    document.getElementById('typingIndicator').classList.add('hidden');
+                }
+            });
+
+            // System message
+            sendSystemMessage(currentUser.nickname + ' joined the chat');
+
+            // Focus input
+            setTimeout(() => {
+                document.getElementById('messageInput').focus();
+            }, 300);
+        }
+
+        // Leave Room
+        function leaveRoom() {
+            if (currentRoom) {
+                sendSystemMessage(currentUser.nickname + ' left the chat');
+                
+                setTimeout(() => {
+                    if (messagesRef) messagesRef.off();
+                    if (presenceRef) presenceRef.remove();
+                    if (typingRef) typingRef.off();
+                    database.ref('chatpresence/' + currentRoom).off();
+                    database.ref('chattyping/' + currentRoom + '/' + currentUser.id).remove();
+
+                    currentRoom = null;
+                    document.getElementById('messagesList').innerHTML = '';
+                    
+                    document.getElementById('chatScreen').classList.add('hidden');
+                    document.getElementById('landingScreen').classList.remove('hidden');
+                }, 100);
+            }
+        }
+
+        // Send Message
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const text = input.value.trim();
+
+            if (!text || !currentRoom) return;
+
+            const message = {
+                id: 'msg_' + Date.now(),
+                odabirId: currentUser.id,
+                nickname: currentUser.nickname,
+                text: text,
+                timestamp: Date.now(),
+                type: 'user'
+            };
+
+            database.ref('chatmessages/' + currentRoom).push(message);
+            database.ref('chattyping/' + currentRoom + '/' + currentUser.id).remove();
+            input.value = '';
+        }
+
+        // Send System Message
+        function sendSystemMessage(text) {
+            if (!currentRoom) return;
+            const message = {
+                id: 'sys_' + Date.now(),
+                text: text,
+                timestamp: Date.now(),
+                type: 'system'
+            };
+            database.ref('chatmessages/' + currentRoom).push(message);
+        }
+
+        // Display Message
+        function displayMessage(message) {
+            const container = document.getElementById('messagesList');
+            const div = document.createElement('div');
+            div.className = 'message-bubble';
+
+            if (message.type === 'system') {
+                div.innerHTML = `
+                    <div class="text-center py-1">
+                        <span class="text-slate-500 text-xs bg-slate-800/80 px-3 py-1 rounded-full">
+                            ${escapeHtml(message.text)}
+                        </span>
+                    </div>
+                `;
+            } else {
+                const isOwn = message.odabirId === currentUser.id;
+                const time = new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                
+                div.innerHTML = `
+                    <div class="flex ${isOwn ? 'justify-end' : 'justify-start'}">
+                        <div class="max-w-[80%]">
+                            ${!isOwn ? `<p class="text-xs text-purple-400 mb-1 ml-2 font-medium">${escapeHtml(message.nickname)}</p>` : ''}
+                            <div class="${isOwn 
+                                ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white' 
+                                : 'bg-slate-700/80 text-white'} px-4 py-2.5 rounded-2xl ${isOwn ? 'rounded-br-sm' : 'rounded-bl-sm'} shadow-sm">
+                                <p class="break-words text-[15px] leading-relaxed">${escapeHtml(message.text)}</p>
+                            </div>
+                            <p class="text-[10px] text-slate-500 mt-1 ${isOwn ? 'text-right mr-2' : 'ml-2'}">${time}</p>
+                        </div>
+                    </div>
+                `;
+            }
+
+            container.appendChild(div);
+            
+            // Scroll to bottom
+            const messagesContainer = document.getElementById('messagesContainer');
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // Handle typing
+        function handleTyping() {
+            if (currentRoom) {
+                database.ref('chattyping/' + currentRoom + '/' + currentUser.id).set({
+                    nickname: currentUser.nickname,
+                    timestamp: Date.now()
+                });
+
+                clearTimeout(typingTimeout);
+                typingTimeout = setTimeout(() => {
+                    database.ref('chattyping/' + currentRoom + '/' + currentUser.id).remove();
+                }, 2000);
+            }
+        }
+
+        function handleKeyPress(event) {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        }
+
+        // Copy Room ID
+        function copyRoomId() {
+            if (currentRoom) {
+                if (navigator.clipboard) {
+                    navigator.clipboard.writeText(currentRoom).then(() => {
+                        showToast('Room ID copied!');
+                    });
+                } else {
+                    // Fallback for older browsers
+                    const input = document.createElement('input');
+                    input.value = currentRoom;
+                    document.body.appendChild(input);
+                    input.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(input);
+                    showToast('Room ID copied!');
+                }
+            }
+        }
+
+        // Escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Handle page unload
+        window.addEventListener('beforeunload', () => {
+            if (presenceRef) presenceRef.remove();
+        });
+
+        // Prevent pull-to-refresh on mobile
+        document.body.addEventListener('touchmove', function(e) {
+            if (e.target.closest('.messages-container') || e.target.closest('#landingScreen')) {
+                return;
+            }
+            e.preventDefault();
+        }, { passive: false });
+
+        // Register Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('data:application/javascript,self.addEventListener("fetch",e=>e.respondWith(fetch(e.request)))').catch(() => {});
+        }
+    </script>
+</body>
+</html>
